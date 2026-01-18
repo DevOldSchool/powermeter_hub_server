@@ -2,7 +2,7 @@ import json
 import logging
 from typing import List, Optional
 
-def parse_sensor_line(line: str, hub_version: str) -> Optional[dict]:
+def parse_sensor_line(line: str, hub_version: str, firmware_version: str) -> Optional[dict]:
     """
     Parses a single line of sensor data.
     
@@ -26,6 +26,9 @@ def parse_sensor_line(line: str, hub_version: str) -> Optional[dict]:
         rssi_val = None
         # --- EFMS1 Multi-sensor processing ---
         if data_type.startswith("EFMS"):
+            # M = motion
+            # T = temperature
+            # L = light
             raw_block = data[3]  # Example: "M,64.00&T,0.00&L,0.00"
 
             # Some packets include RSSI after an additional pipe
@@ -64,6 +67,7 @@ def parse_sensor_line(line: str, hub_version: str) -> Optional[dict]:
 
             # MAC address = sensor ID for V1
             sid = data[0]
+            firmware_version = data[1]
             jdata = json.loads(data[3])
             value = float(jdata['data'][0][3])
             label = f"efergy_{hub_version}_{sid}"
@@ -89,8 +93,9 @@ def parse_sensor_line(line: str, hub_version: str) -> Optional[dict]:
             "sid": sid,
             "label": label,
             "value": value,
+            "rssi": rssi_val,
             "hub_version": hub_version,
-            "rssi": rssi_val
+            "firmware_version": firmware_version,
         }
 
     except (IndexError, ValueError, TypeError, json.JSONDecodeError) as e:
@@ -101,7 +106,7 @@ def parse_sensor_line(line: str, hub_version: str) -> Optional[dict]:
         return None
 
 
-def parse_sensor_payload(post_data_bytes: bytes, hub_version: str) -> List[dict]:
+def parse_sensor_payload(post_data_bytes: bytes, hub_version: str, firmware_version: str) -> List[dict]:
     """
     Parses a full POST body containing sensor data.
     """
@@ -114,7 +119,7 @@ def parse_sensor_payload(post_data_bytes: bytes, hub_version: str) -> List[dict]
 
     results = []
     for line in sensor_lines:
-        parsed = parse_sensor_line(line, hub_version)
+        parsed = parse_sensor_line(line, hub_version, firmware_version)
         if parsed:
             results.append(parsed)
 

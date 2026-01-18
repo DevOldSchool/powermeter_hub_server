@@ -1,6 +1,5 @@
 services:
   hub-server:
-#    build: ./hub-server
     image: ghcr.io/devoldschool/powermeter_hub_server/hub-server:latest
     container_name: hub-server
     expose:
@@ -11,9 +10,13 @@ services:
       TZ: Australia/Brisbane
       # Logging
       LOG_LEVEL: INFO
+      # Common voltages AU,UK = 230 | US = 120 https://en.wikipedia.org/wiki/Mains_electricity_by_country
+      MAINS_VOLTAGE: 230
+      # H1 and H2 devices used a power factor of 0.6, H3 uses 1.0
+      POWER_FACTOR: 0.6
       # How many months of readings and aggregated values to keep, 0 = keep everything
       HISTORY_RETENTION_MONTHS: 0
-      # MQTT
+      # MQTT https://www.home-assistant.io/integrations/mqtt/
       MQTT_ENABLED: true
       MQTT_BROKER: homeassistant.local
       MQTT_PORT: 1883
@@ -21,11 +24,12 @@ services:
       MQTT_PASS: your-password-here
       # Home Assistant
       HA_DISCOVERY: true
-      # Setting to true will reset the cumulative energy value each month
+      # Setting to true will reset the cumulative energy value each month in Home Assistant
       ENERGY_MONTHLY_RESET: false
+      # Device URL, set this to your management page, example Portainer or your NAS
+      DEVICE_URL: "https://github.com/DevOldSchool/powermeter_hub_server"
 
   legacy-nginx:
-#    build: ./legacy-nginx
     image: ghcr.io/devoldschool/powermeter_hub_server/legacy-nginx:latest
     container_name: legacy-nginx
     ports:

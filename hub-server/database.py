@@ -109,7 +109,8 @@ class Database:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS labels (
                     label_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    label STRING UNIQUE
+                    label STRING UNIQUE,
+                    firmware_version STRING
                 )
             """)
             cursor.execute("""
@@ -147,10 +148,17 @@ class Database:
                 ON energy_hourly (hour_start)
             """)
 
+            # Add a firmware_version column if it doesn't exist
+            cursor.execute("PRAGMA table_info(labels)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "firmware_version" not in columns:
+                logging.info("Adding 'firmware_version' column to labels table")
+                cursor.execute("ALTER TABLE labels ADD COLUMN firmware_version STRING")
+
         logging.debug("Database setup complete.")
 
 
-    def _get_or_create_label_id(self, cursor: sqlite3.Cursor, label: str) -> int:
+    def _get_or_create_label_id(self, cursor: sqlite3.Cursor, label: str, firmware_version: str) -> int:
         """
         Gets a label_id from the cache or database.
         If the label doesn't exist, it's created.
@@ -171,14 +179,23 @@ class Database:
                 return self._label_cache[label]
 
             # If not in cache, check database
-            cursor.execute("SELECT label_id FROM labels WHERE label=?", (label,))
+            cursor.execute("SELECT label_id, firmware_version FROM labels WHERE label=?", (label,))
             row = cursor.fetchone()
 
             if row:
-                label_id = row[0]
+                label_id, existing_firmware = row
+                # Update firmware only if it's provided and different
+                if firmware_version is not None and firmware_version != existing_firmware:
+                    cursor.execute(
+                        "UPDATE labels SET firmware_version=? WHERE label_id=?",
+                        (firmware_version, label_id)
+                    )
             else:
                 # Not in DB, so create it
-                cursor.execute("INSERT INTO labels(label) VALUES (?)", (label,))
+                cursor.execute(
+                    "INSERT INTO labels(label, firmware_version) VALUES (?, ?)",
+                    (label, firmware_version)
+                )
                 label_id = cursor.lastrowid
                 logging.debug(f"Created new label '{label}' with id {label_id}")
 
@@ -186,7 +203,7 @@ class Database:
             return label_id
 
 
-    def log_data(self, label: str, value: float, timestamp: Optional[int] = None) -> None:
+    def log_data(self, label: str, value: float, firmware_version: str, timestamp: Optional[int] = None) -> None:
         """
         Logs a new data point to the database.
 
@@ -196,6 +213,7 @@ class Database:
         Args:
             label: The string identifier for the data (e.g., 'efergy_h2_123456').
             value: The floating-point value of the reading.
+            firmware_version: The firmware version of the hub.
             timestamp: The Unix timestamp. If None, current time is used.
         """
         if timestamp is None:
@@ -204,7 +222,7 @@ class Database:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                label_id = self._get_or_create_label_id(cursor, label)
+                label_id = self._get_or_create_label_id(cursor, label, firmware_version)
 
                 # Insert the actual reading
                 cursor.execute(
@@ -225,8 +243,11 @@ class Database:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT label FROM labels ORDER BY label ASC")
-                return [row[0] for row in cursor.fetchall()]
+                cursor.execute("SELECT label, firmware_version FROM labels ORDER BY label ASC")
+                return [
+                    {"label": row[0], "firmware_version": row[1]}
+                    for row in cursor.fetchall()
+                ]
         except Exception as e:
             logging.error(f"Failed to fetch labels: {e}")
             return []

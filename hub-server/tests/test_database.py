@@ -30,11 +30,12 @@ def test_database_setup(db_path):
 
 
 def test_log_data_and_labels(db):
-    db.log_data("test_label", 100.0, timestamp=1000)
-    db.log_data("test_label", 200.0, timestamp=1100)
-    db.log_data("another_label", 50.0, timestamp=1200)
+    db.log_data("test_label", 100.0, "2.3.7", timestamp=1000)
+    db.log_data("test_label", 200.0, "2.3.7", timestamp=1100)
+    db.log_data("another_label", 50.0, "2.3.7", timestamp=1200)
     
-    labels = db.get_all_labels()
+    labels_data = db.get_all_labels()
+    labels = [item["label"] for item in labels_data]
     assert "test_label" in labels
     assert "another_label" in labels
     assert len(labels) == 2
@@ -52,9 +53,9 @@ def test_aggregate_one_hour(db):
     
     # Add some readings in this hour
     # efergy_h1 uses (PF * V * I/1000) / 1000 for kW
-    db.log_data("efergy_h1_test", 1000.0, timestamp=hour_start)      # 1000mA -> (0.6 * 230 * 1) / 1000 = 0.138 kW
-    db.log_data("efergy_h1_test", 2000.0, timestamp=hour_start + 1800) # 2000mA -> 0.276 kW
-    db.log_data("efergy_h1_test", 1000.0, timestamp=hour_start + 3600) # Next hour, shouldn't be included in this aggregation
+    db.log_data("efergy_h1_test", 1000.0, "2.3.7", timestamp=hour_start)      # 1000mA -> (0.6 * 230 * 1) / 1000 = 0.138 kW
+    db.log_data("efergy_h1_test", 2000.0, "2.3.7", timestamp=hour_start + 1800) # 2000mA -> 0.276 kW
+    db.log_data("efergy_h1_test", 1000.0, "2.3.7", timestamp=hour_start + 3600) # Next hour, shouldn't be included in this aggregation
     
     with sqlite3.connect(db.db_path) as conn:
         cursor = conn.cursor()
@@ -78,8 +79,8 @@ def test_aggregate_hours(db):
     hour1_start = (now - 7200) - (now % 3600)
     hour2_start = hour1_start + 3600
     
-    db.log_data("efergy_h3_test", 100.0, timestamp=hour1_start) # h3 uses value/10/1000 = 0.01 kW
-    db.log_data("efergy_h3_test", 100.0, timestamp=hour1_start + 3599)
+    db.log_data("efergy_h3_test", 100.0, "2.3.7", timestamp=hour1_start) # h3 uses value/10/1000 = 0.01 kW
+    db.log_data("efergy_h3_test", 100.0, "2.3.7", timestamp=hour1_start + 3599)
     
     processed = db.aggregate_hours()
     assert processed >= 1
@@ -93,14 +94,14 @@ def test_truncate_old_data(db):
     now = int(time.time())
     two_months_ago = now - (62 * 24 * 3600)
     
-    db.log_data("old_label", 100.0, timestamp=two_months_ago)
-    db.log_data("new_label", 100.0, timestamp=now)
+    db.log_data("old_label", 100.0, "2.3.7", timestamp=two_months_ago)
+    db.log_data("new_label", 100.0, "2.3.7", timestamp=now)
     
     # Aggregate to have something in energy_hourly to
     # Need to make sure we have a full hour for the old data
     old_hour_start = two_months_ago - (two_months_ago % 3600)
-    db.log_data("old_label", 100.0, timestamp=old_hour_start)
-    db.log_data("old_label", 100.0, timestamp=old_hour_start + 3599)
+    db.log_data("old_label", 100.0, "2.3.7", timestamp=old_hour_start)
+    db.log_data("old_label", 100.0, "2.3.7", timestamp=old_hour_start + 3599)
     
     with sqlite3.connect(db.db_path) as conn:
         db.aggregate_one_hour(conn.cursor(), old_hour_start)
@@ -120,7 +121,7 @@ def test_truncate_old_data(db):
 
 
 def test_reconnect(db):
-    db.log_data("reconnect_test", 123.0, timestamp=1000)
+    db.log_data("reconnect_test", 123.0, "2.3.7", timestamp=1000)
 
     # Simulate connection loss
     if db._conn:
@@ -128,7 +129,7 @@ def test_reconnect(db):
         db._conn = None
 
     # Now log again — _get_connection should reconnect automatically
-    db.log_data("reconnect_test", 456.0, timestamp=1100)
+    db.log_data("reconnect_test", 456.0, "2.3.7", timestamp=1100)
 
     # Verify both entries exist
     with sqlite3.connect(db.db_path) as conn:
@@ -162,7 +163,7 @@ def test_connection_error_recovery(db, caplog):
     db._connect = failing_connect
 
     # Attempt to log data — first attempt will fail, second should succeed
-    db.log_data("error_test_label", 42.0)
+    db.log_data("error_test_label", 42.0, "2.3.7")
 
     # Check that a warning was logged
     warnings = [rec for rec in caplog.records if "DB connection error" in rec.message]
