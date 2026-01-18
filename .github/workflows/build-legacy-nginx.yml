@@ -1,9 +1,8 @@
 name: Build and Push Legacy Nginx
 
+# Switch to a manual step as this does not change often.
 on:
   workflow_dispatch:
-  release:
-    types: [ published ]
 
 jobs:
   build-and-push:
