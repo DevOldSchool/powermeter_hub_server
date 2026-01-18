@@ -4,9 +4,11 @@ A fake Efergy sensor data server, updated for Python 3.
 This server emulates the sensornet.info API endpoints for an
 Efergy hub, logging incoming sensor data to a sqlite database.
 """
+import json
 import logging
 import socket
 import sys
+import requests
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from typing import Type
 from urllib.parse import urlparse, parse_qs
@@ -20,7 +22,7 @@ from config import (
     SERVER_PORT, LOG_LEVEL, MQTT_ENABLED, HA_DISCOVERY, ENERGY_MONTHLY_RESET, HISTORY_RETENTION_MONTHS, SQLITE_TIMEOUT,
     SQLITE_RETRIES, SQLITE_RETRY_DELAY, POWER_VALUE_TEMPLATE_H1, POWER_UNIT_OF_MEASUREMENT_H1, POWER_VALUE_TEMPLATE_H2,
     POWER_UNIT_OF_MEASUREMENT_H2, POWER_VALUE_TEMPLATE_H3, POWER_UNIT_OF_MEASUREMENT_H3, ENERGY_VALUE_TEMPLATE,
-    ENERGY_UNIT_OF_MEASUREMENT
+    ENERGY_UNIT_OF_MEASUREMENT, TELEMETRY_ENABLED, TELEMETRY_URL
 )
 
 class EfergyHTTPServer(HTTPServer):
@@ -97,24 +99,29 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
         try:
             parsed_url = urlparse(self.path)
             query = parse_qs(parsed_url.query)
+            method = self.command
+            path = self.path
             content_length = int(self.headers.get("Content-Length", 0))
+            content_type = self.headers.get("Content-Type", "")
+            body_utf8 = "No request body present"
+            body_hex = ""
 
             if post_data_bytes is None and content_length > 0:
                 post_data_bytes = self.rfile.read(content_length)
 
             logging.warning("========== UNKNOWN PACKET ==========")
-            logging.warning("Method: %s", self.command)
-            logging.warning("Raw path: %s", self.path)
+            logging.warning("Method: %s", method)
+            logging.warning("Raw path: %s", path)
             logging.warning("Path: %s", parsed_url.path)
             logging.warning("Query: %s", query)
-            logging.warning("Content-Type: %s", self.headers.get("Content-Type"))
+            logging.warning("Content-Type: %s", content_type)
             logging.warning("Content-Length: %d", content_length)
             logging.warning("Headers: %s", dict(self.headers))
 
             if not post_data_bytes:
                 logging.warning("No request body present")
             else:
-                utf8 = post_data_bytes.decode("utf-8", "ignore")
+                body_utf8 = post_data_bytes.decode("utf-8", "ignore")
                 hex_lines = []
 
                 for i in range(0, len(post_data_bytes), 16):
@@ -123,12 +130,33 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
                     ascii_bytes = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
                     hex_lines.append(f"{i:04X}  {hex_bytes:<48}  {ascii_bytes}")
 
-                logging.warning("Payload UTF8:\n%s", utf8)
-                logging.warning("Payload HEX:\n%s", "\n".join(hex_lines))
+                body_hex = "\n".join(hex_lines)
+                logging.warning("Payload UTF8:\n%s", body_utf8)
+                logging.warning("Payload HEX:\n%s", body_hex)
 
             logging.warning("====================================")
 
+            if TELEMETRY_ENABLED:
+                payload = {
+                    "entry.712651641": str(method),
+                    "entry.647193072": str(path),
+                    "entry.718643403": str(parsed_url.path),
+                    "entry.628690130": json.dumps(query, ensure_ascii=False),
+                    "entry.744795787": str(content_type),
+                    "entry.2143045526": str(content_length),
+                    "entry.311956051": json.dumps(dict(self.headers), ensure_ascii=False),
+                    "entry.1917117670": body_utf8,
+                    "entry.2020488076": body_hex,
+                }
 
+                logging.warning("Submitting telemetry for unknown packet")
+                response = requests.post(TELEMETRY_URL, data=payload, timeout=5)
+                if response.status_code == 200:
+                    logging.warning("Telemetry submission successful")
+                else:
+                    logging.warning(f"Failed to submit Telemetry: {response.status_code}")
+
+                logging.warning("====================================")
         except Exception:
             logging.exception("Error in unknown HTTP handler")
             if not self.wfile.closed:
@@ -255,7 +283,7 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
         parsed_results = parse_sensor_payload(post_data_bytes, hub_version, firmware_version)
 
         if hub_version.upper() not in self.server.detected_versions:
-            logging.info(f"Detected Efergy Hub version: {hub_version.upper()}")
+            logging.info(f"Detected Efergy Hub version: {hub_version.upper()} - {firmware_version}")
             self.server.detected_versions.add(hub_version.upper())
 
         for data in parsed_results:
@@ -342,6 +370,7 @@ if __name__ == '__main__':
     logging.info(f"  Python: {sys.version.split()[0]}")
     logging.info(f"  Port: {SERVER_PORT}")
     logging.info(f"  Logging level: {LOG_LEVEL}")
+    logging.info(f"  Telemetry enabled: {TELEMETRY_ENABLED}")
     logging.info(f"  MQTT: {'enabled' if MQTT_ENABLED else 'disabled'}")
     logging.info(f"  HA discovery: {'enabled' if HA_DISCOVERY else 'disabled'}")
     logging.info(f"  Monthly reset: {ENERGY_MONTHLY_RESET}")
