@@ -17,7 +17,7 @@
                 WHEN labels.label LIKE '%h1%' OR labels.label LIKE '%h2%'
                     THEN (0.6 * 230 * readings.value) / 1000.0
                 WHEN labels.label LIKE '%h3%'
-                    THEN (readings.value / 10.0)
+                    THEN 1.0 * 230 * ((readings.value / 10.0) / 200)
                 ELSE readings.value
             END AS W
     FROM readings

@@ -36,20 +36,61 @@ chmod +x ./generate-certs.sh
 This will create `server.key` and `server.crt` inside the `legacy-nginx` directory, where the `docker-compose.yml` file 
 expects to find them.
 
-### 2. Run the Services
+### 2. Configuration
+
+The `hub-server` can be configured using environment variables in the `docker-compose.yml` file.
+
+#### Identifying your Hub Version
+
+Efergy Hubs (H1, H2, and H3) send data in different formats and to different endpoints. To ensure the `POWER_FACTOR` and data parsing are correct, you need to identify your hub version.
+
+The `hub-server` will automatically log the detected version at the `INFO` level when it receives the first packet from your device.
+
+1.  **Check the logs**: View the logs of the `hub-server` container as the device sends data (usually every 6-30 seconds):
+    ```shell
+    docker logs -f hub-server
+    ```
+2.  **Look for the detection message**:
+    - `Detected Efergy Hub version: H1`
+    - `Detected Efergy Hub version: H2`
+    - `Detected Efergy Hub version: H3`
+
+3.  **Update Configuration**: Once identified, update your `docker-compose.yml` with the appropriate `POWER_FACTOR`:
+    - **H1 / H2**: `0.6`
+    - **H3**: `1.0`
+
+*Note: If you don't see the detection message, you can temporarily set `LOG_LEVEL: DEBUG` in `docker-compose.yml` to see all incoming requests and identify the endpoint (`/recjson` = H1, `/h2` = H2, `/h3` = H3).*
+
+#### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TZ` | Timezone (e.g., `Australia/Brisbane`) | `Australia/Brisbane` |
+| `LOG_LEVEL` | Logging verbosity (`DEBUG`, `INFO`, `WARN`, `ERROR`) | `INFO` |
+| `MAINS_VOLTAGE` | Local mains voltage (e.g., `230` for AU/UK, `120` for US) | `230` |
+| `POWER_FACTOR` | Power factor (H1/H2 use `0.6`, H3 uses `1.0`) | `0.6` |
+| `HISTORY_RETENTION_MONTHS` | How many months of data to keep (`0` = keep everything) | `0` |
+| `MQTT_ENABLED` | Enable or disable MQTT publishing (`true`/`false`) | `false` |
+| `MQTT_BROKER` | IP address or hostname of your MQTT broker | `10.0.0.220` |
+| `MQTT_PORT` | Port for your MQTT broker | `1883` |
+| `MQTT_USER` | Username for MQTT broker | `None` |
+| `MQTT_PASS` | Password for MQTT broker | `None` |
+| `HA_DISCOVERY` | Enable Home Assistant MQTT Discovery (`true`/`false`) | `false` |
+| `ENERGY_MONTHLY_RESET` | Reset cumulative energy in HA each month (`true`/`false`) | `false` |
+| `DEVICE_URL` | Link to device management (e.g., Portainer or NAS UI) | `.../powermeter_hub_server` |
+
+### 3. Run the Services
 
 With the certificates in place, you can start both services using Docker Compose.
 
 ```shell
-# Build and start the containers in detached mode
-docker-compose up --build -d
+# Start the containers in detached mode
+docker-compose up -d
 ```
 
 This will:
-* Build the `hub-server` image from its Dockerfile.
-* Build the `legacy-nginx` image from its Dockerfile.
 * Start both containers. The `legacy-nginx` service is exposed on port `443`.
-* Automatically create the SQLite database on first run and mount the data directory for persistence.
+* Automatically create the SQLite database on the first run and mount the data directory for persistence.
 
 ### 3. Redirect the Efergy Hub
 
@@ -126,22 +167,14 @@ If your Efergy Hub server is running on HA OS, you can integrate the readings in
 
 1. **Configure Environment Variables** for MQTT
 
-Update your environment variables in the `docker-compose.yml` file:
-```
-# Optional: logging level (DEBUG, INFO, WARN, ERROR)
-LOG_LEVEL=INFO
-
-# Enable MQTT (true/false)
-MQTT_ENABLED=true
-
-# MQTT broker details
-MQTT_BROKER=homeassistant.local
-MQTT_PORT=1883
-MQTT_USER=mqtt-broker-username-here
-MQTT_PASS=your-password-here
-
-# Home Assistant MQTT Discovery
-HA_DISCOVERY=true
+Configure your environment variables in the `docker-compose.yml` file as described in the [Configuration](#configuration) section. 
+For Home Assistant with MQTT, you should at least set:
+```yaml
+MQTT_ENABLED: true
+MQTT_BROKER: homeassistant.local
+MQTT_USER: mqtt-broker-username-here
+MQTT_PASS: your-password-here
+HA_DISCOVERY: true
 ```
 
 2. **Home Assistant Auto-Discovery** 

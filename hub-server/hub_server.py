@@ -20,7 +20,7 @@ from config import (
     SERVER_PORT, LOG_LEVEL, MQTT_ENABLED, HA_DISCOVERY, ENERGY_MONTHLY_RESET, HISTORY_RETENTION_MONTHS, SQLITE_TIMEOUT,
     SQLITE_RETRIES, SQLITE_RETRY_DELAY, POWER_VALUE_TEMPLATE_H1, POWER_UNIT_OF_MEASUREMENT_H1, POWER_VALUE_TEMPLATE_H2,
     POWER_UNIT_OF_MEASUREMENT_H2, POWER_VALUE_TEMPLATE_H3, POWER_UNIT_OF_MEASUREMENT_H3, ENERGY_VALUE_TEMPLATE,
-    ENERGY_UNIT_OF_MEASUREMENT
+    ENERGY_UNIT_OF_MEASUREMENT, TELEMETRY_ENABLED, TELEMETRY_URL
 )
 
 class EfergyHTTPServer(HTTPServer):
@@ -41,6 +41,7 @@ class EfergyHTTPServer(HTTPServer):
         self.database = database
         self.mqtt_manager = mqtt_manager
         self.published_discovery = set()
+        self.detected_versions = set()
         super().__init__(server_address, request_handler_class, bind_and_activate)
 
 
@@ -178,6 +179,8 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
             post_data_bytes = self.rfile.read(content_length)
             logging.debug(f">>> POST body: {post_data_bytes.decode('utf-8', 'ignore')}")
 
+            firmware_version = self.headers.get("X-Version", "")
+
             db = getattr(self.server, "database", None)
             if not db:
                 logging.error("Database not initialized on server instance.")
@@ -190,7 +193,7 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
                 logging.debug(f"Received ping from sensors: {sensor_ids}")
             elif parsed_url.path in ["/h2", "/h3"]:
                 hub_version = parsed_url.path.strip("/")
-                self.process_sensor_data(post_data_bytes, hub_version, db)
+                self.process_sensor_data(post_data_bytes, hub_version, firmware_version, db)
             elif parsed_url.path == '/recjson':
                 # v1 hub sends URL-encoded form data: json=<pipe-delimited-data>
                 hub_version = 'h1'
@@ -198,7 +201,7 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
                 if decoded_body.startswith('json='):
                     # Extract the actual sensor data
                     sensor_data = decoded_body[5:]  # Skip 'json='
-                    self.process_sensor_data(sensor_data.encode('utf-8'), hub_version, db)
+                    self.process_sensor_data(sensor_data.encode('utf-8'), hub_version, "", db)
                 else:
                     logging.warning(f"Unexpected /recjson body format: {decoded_body[:100]}")
             else:
@@ -247,9 +250,13 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
         self._send_response(200, b"success")
 
 
-    def process_sensor_data(self, post_data_bytes: bytes, hub_version: str, database: Database):
+    def process_sensor_data(self, post_data_bytes: bytes, hub_version: str, firmware_version: str, database: Database):
         """Parses and logs sensor data from the POST body."""
-        parsed_results = parse_sensor_payload(post_data_bytes, hub_version)
+        parsed_results = parse_sensor_payload(post_data_bytes, hub_version, firmware_version)
+
+        if hub_version.upper() not in self.server.detected_versions:
+            logging.info(f"Detected Efergy Hub version: {hub_version.upper()}")
+            self.server.detected_versions.add(hub_version.upper())
 
         for data in parsed_results:
             try:
@@ -264,12 +271,13 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
                     sid = data["sid"]
                     label = data["label"]
                     value = data["value"]
+                    firmware_version = data.get("firmware_version", firmware_version)
                     
                     logging.debug(f"Logging sensor: {label}, raw: {value}")
-                    database.log_data(label, value)
+                    database.log_data(label, value, firmware_version)
 
                     # Publish power reading
-                    self.server.mqtt_manager.publish_power(label, sid, hub_version, value)
+                    self.server.mqtt_manager.publish_power(label, sid, hub_version, firmware_version, value)
 
             except Exception as e:
                 logging.error(f"Unexpected error processing parsed data {data}: {e}")

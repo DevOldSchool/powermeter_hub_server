@@ -3,6 +3,7 @@ import os
 # Hub server config
 SERVER_PORT = int(os.getenv("SERVER_PORT", "5000"))
 MAINS_VOLTAGE = int(os.getenv("MAINS_VOLTAGE", "230"))
+# H1 and H2 devices use a power factor of 0.6, H3 uses 1.0
 POWER_FACTOR = float(os.getenv("POWER_FACTOR", "0.6"))
 
 # Logging level, values are DEBUG, INFO, WARN, ERROR, CRITICAL
@@ -34,6 +35,10 @@ POWER_STATE_CLASS = os.getenv("POWER_STATE_CLASS", "measurement")
 
 # Formulas
 # AC single phase milliamps to watts calculation P(W) = (PF × V(V) × I(mA)) / 1000
+# {{ (__POWER_FACTOR__ * __MAINS_VOLTAGE__ * (value_json.value | float)) / 1000 }}
+
+# AC three phase milliamps to watts calculation P(W) = (√3 x PF × VL-L(V) × I(mA)) / 1000
+# {{ (1.732 * __POWER_FACTOR__ * __MAINS_VOLTAGE__ * (value_json.value | float)) / 1000 }}
 
 POWER_VALUE_TEMPLATE_H1_RAW = os.getenv("POWER_VALUE_TEMPLATE_H1_RAW", "{{ (__POWER_FACTOR__ * __MAINS_VOLTAGE__ * (value_json.value | float)) / 1000 }}")
 POWER_VALUE_TEMPLATE_H1 = POWER_VALUE_TEMPLATE_H1_RAW.replace("__MAINS_VOLTAGE__", str(MAINS_VOLTAGE)).replace("__POWER_FACTOR__", str(POWER_FACTOR))
@@ -43,9 +48,11 @@ POWER_VALUE_TEMPLATE_H2_RAW = os.getenv("POWER_VALUE_TEMPLATE_H2_RAW", "{{ (__PO
 POWER_VALUE_TEMPLATE_H2 = POWER_VALUE_TEMPLATE_H2_RAW.replace("__MAINS_VOLTAGE__", str(MAINS_VOLTAGE)).replace("__POWER_FACTOR__", str(POWER_FACTOR))
 POWER_UNIT_OF_MEASUREMENT_H2 = os.getenv("POWER_UNIT_OF_MEASUREMENT_H2", "W")
 
-POWER_VALUE_TEMPLATE_H3 = os.getenv("POWER_VALUE_TEMPLATE_H3", "{{ (value_json.value | float) / 10 }}")
+POWER_VALUE_TEMPLATE_H3_RAW = os.getenv("POWER_VALUE_TEMPLATE_H3_RAW", "{{ __POWER_FACTOR__ * __MAINS_VOLTAGE__ * (((value_json.value | float) / 10) / 200) }}")
+POWER_VALUE_TEMPLATE_H3 = POWER_VALUE_TEMPLATE_H3_RAW.replace("__MAINS_VOLTAGE__", str(MAINS_VOLTAGE)).replace("__POWER_FACTOR__", str(POWER_FACTOR))
 POWER_UNIT_OF_MEASUREMENT_H3 = os.getenv("POWER_UNIT_OF_MEASUREMENT_H3", "W")
 
+ENERGY_SENSOR_LABEL = "energy_consumption"
 ENERGY_NAME = os.getenv("ENERGY_NAME", "Energy consumption")
 ENERGY_ICON = os.getenv("ENERGY_ICON", "mdi:lightning-bolt")
 ENERGY_DEVICE_CLASS = os.getenv("ENERGY_DEVICE_CLASS", "energy")

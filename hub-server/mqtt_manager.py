@@ -2,7 +2,6 @@ import json
 import logging
 import time
 import paho.mqtt.client as mqtt
-from __version__ import __version__
 from config import (
     MQTT_ENABLED, MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASS,
     MQTT_BASE_TOPIC, HA_DISCOVERY, HA_DISCOVERY_PREFIX,
@@ -10,20 +9,17 @@ from config import (
     POWER_UNIT_OF_MEASUREMENT_H1, POWER_VALUE_TEMPLATE_H1,
     POWER_UNIT_OF_MEASUREMENT_H2, POWER_VALUE_TEMPLATE_H2,
     POWER_UNIT_OF_MEASUREMENT_H3, POWER_VALUE_TEMPLATE_H3,
-    ENERGY_NAME, ENERGY_ICON, ENERGY_DEVICE_CLASS, ENERGY_STATE_CLASS,
+    ENERGY_NAME, ENERGY_ICON, ENERGY_DEVICE_CLASS, ENERGY_STATE_CLASS, ENERGY_SENSOR_LABEL,
     ENERGY_UNIT_OF_MEASUREMENT, ENERGY_VALUE_TEMPLATE,
-    DEVICE_NAME, DEVICE_MODEL, DEVICE_IDENTIFIERS, DEVICE_MANUFACTURER,
-    DEVICE_URL
+    DEVICE_NAME, DEVICE_MODEL, DEVICE_IDENTIFIERS, DEVICE_MANUFACTURER, DEVICE_URL
 )
 
-ENERGY_SENSOR_LABEL = "energy_consumption"
 
 def get_topic(label, sensor_type="power"):
     if sensor_type == "power":
         return f"{MQTT_BASE_TOPIC}/{label}/power"
     else:
         return f"{MQTT_BASE_TOPIC}/{label}/energy"
-
 
 
 class MQTTManager:
@@ -34,7 +30,6 @@ class MQTTManager:
         self.max_retries = max_retries
         self.retry_interval = retry_interval
         self.connected = False
-        self.hub_version: str | None = None
 
         if not self.enabled:
             logging.debug("MQTT disabled via config.")
@@ -90,7 +85,7 @@ class MQTTManager:
 
 
     # Generic publishing
-    def publish(self, topic: str, payload: dict, retain: bool = False):
+    def publish(self, topic: str, payload: dict | str, retain: bool = False):
         if not self.enabled:
             return
 
@@ -106,18 +101,22 @@ class MQTTManager:
             return
 
         try:
-            json_payload = json.dumps(payload)
-            self.client.publish(topic, json_payload, retain=retain)
-            logging.debug(f"MQTT published to {topic}: {json_payload[:400]}")
+            if isinstance(payload, (dict, list)):
+                final_payload = json.dumps(payload)
+            else:
+                final_payload = payload
+
+            info = self.client.publish(topic, final_payload, retain=retain)
+            info.wait_for_publish()
+
+            message = str(final_payload)[:600] if final_payload is not None else ""
+            logging.debug(f"MQTT published to {topic}: {message}")
         except Exception as e:
             logging.error(f"MQTT publish failed: {topic} — {e}")
 
 
-    def publish_power_discovery(self, label: str, sid: str, topic: str, hub_version: str):
+    def publish_power_discovery(self, label: str, sid: str, topic: str, hub_version: str, firmware_version: str):
         if not self.enabled or not HA_DISCOVERY:
-            return
-        if self.hub_version is None:
-            logging.warning("Energy discovery attempted without hub_version – skipped")
             return
 
         config_topic = f"{HA_DISCOVERY_PREFIX}/sensor/{label}/config"
@@ -152,11 +151,15 @@ class MQTTManager:
                 "identifiers": DEVICE_IDENTIFIERS,
                 "manufacturer": DEVICE_MANUFACTURER,
                 "model": DEVICE_MODEL,
+                "sw_version": firmware_version,
                 "hw_version": f"{hub_version}",
-                "configuration_url": DEVICE_URL
+                "configuration_url": DEVICE_URL,
             }
         }
 
+        # Clear existing discovery first
+        self.publish(config_topic, "", retain=True)
+        # Publish new discovery
         self.publish(config_topic, payload, retain=True)
         self.discovery_sent.add(label)
 
@@ -184,23 +187,21 @@ class MQTTManager:
                 "identifiers": DEVICE_IDENTIFIERS,
                 "manufacturer": DEVICE_MANUFACTURER,
                 "model": DEVICE_MODEL,
-                "configuration_url": DEVICE_URL
+                "configuration_url": DEVICE_URL,
             }
         }
 
+        # Clear existing discovery first
+        self.publish(config_topic, "", retain=True)
+        # Publish new discovery
         self.publish(config_topic, payload, retain=True)
         self.discovery_sent.add(ENERGY_SENSOR_LABEL)
 
 
     # Publishes reading AND automatically discovery if needed
-    def publish_power(self, label: str, sid: str, hub_version: str, value: float):
+    def publish_power(self, label: str, sid: str, hub_version: str, firmware_version: str, value: float):
         if not self.enabled:
             return
-
-        # Store hub version once
-        if self.hub_version is None:
-            self.hub_version = hub_version
-            logging.info(f"Detected hub version: {hub_version}")
 
         logging.debug(f"Publishing power for {label} with value {value}")
         topic = get_topic(label, sensor_type="power")
@@ -210,7 +211,7 @@ class MQTTManager:
 
         # Publish discovery ONLY once
         if self.discovery_enabled and label not in self.discovery_sent:
-            self.publish_power_discovery(label, sid, topic, hub_version)
+            self.publish_power_discovery(label, sid, topic, hub_version, firmware_version)
             self.discovery_sent.add(label)
 
 
@@ -241,7 +242,13 @@ class MQTTManager:
 
         logging.debug(f"Publishing discovery info for {len(labels)} stored sensors...")
 
-        for label in labels:
+        for label_info in labels:
+            label = label_info.get("label")
+            firmware_version = label_info.get("firmware_version", "")
+
+            if not label:
+                continue
+
             parts = label.split("_")
             if len(parts) < 3:
                 continue
@@ -256,7 +263,7 @@ class MQTTManager:
             sid = parts[2]
 
             power_topic = get_topic(label, sensor_type="power")
-            self.publish_power_discovery(label, sid, power_topic, hub_version)
+            self.publish_power_discovery(label, sid, power_topic, hub_version, firmware_version)
 
         # Energy topic
         energy_topic = get_topic(ENERGY_SENSOR_LABEL, sensor_type="energy")
