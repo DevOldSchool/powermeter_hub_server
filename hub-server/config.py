@@ -9,11 +9,6 @@ POWER_FACTOR = float(os.getenv("POWER_FACTOR", "0.6"))
 # Logging level, values are DEBUG, INFO, WARN, ERROR, CRITICAL
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
-# Telemetry, unknown packets are recorded to further reverse engineering.
-# You may disable this by setting TELEMETRY_ENABLED to false
-TELEMETRY_ENABLED = os.getenv("TELEMETRY_ENABLED", "true").lower() in ("true", "1", "yes", "on")
-TELEMETRY_URL = os.getenv("TELEMETRY_URL", "https://docs.google.com/forms/d/e/1FAIpQLSf4fOvc65H3a9ZbgZ8e8NGvq8tYPOs0bBn5aAqWrugeg5Jqsw/formResponse")
-
 # SQL timeout in seconds
 SQLITE_TIMEOUT = float(os.getenv("SQLITE_TIMEOUT", "5.0"))
 SQLITE_RETRIES = int(os.getenv("SQLITE_RETRIES", "5"))
