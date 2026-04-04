@@ -17,6 +17,7 @@ from database import Database
 from mqtt_manager import MQTTManager
 from aggregator import Aggregator
 from payload_parser import parse_sensor_payload
+from bulk_parser import parse_h3bulk_payload
 from __version__ import __version__
 from config import (
     SERVER_PORT, LOG_LEVEL, MQTT_ENABLED, HA_DISCOVERY, ENERGY_MONTHLY_RESET, HISTORY_RETENTION_MONTHS, SQLITE_TIMEOUT,
@@ -222,6 +223,8 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
             elif parsed_url.path in ["/h2", "/h3"]:
                 hub_version = parsed_url.path.strip("/")
                 self.process_sensor_data(post_data_bytes, hub_version, firmware_version, db)
+            elif parsed_url.path == "/h3bulk":
+                self.process_h3bulk_data(post_data_bytes, firmware_version, db)
             elif parsed_url.path == '/recjson':
                 # v1 hub sends URL-encoded form data: json=<pipe-delimited-data>
                 hub_version = 'h1'
@@ -281,7 +284,16 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
     def process_sensor_data(self, post_data_bytes: bytes, hub_version: str, firmware_version: str, database: Database):
         """Parses and logs sensor data from the POST body."""
         parsed_results = parse_sensor_payload(post_data_bytes, hub_version, firmware_version)
+        self.process_parsed_results(parsed_results, hub_version, firmware_version, database)
 
+
+    def process_h3bulk_data(self, post_data_bytes: bytes, firmware_version: str, database: Database):
+        """Parses and logs sensor data from a binary H3 bulk payload."""
+        parsed_results = parse_h3bulk_payload(post_data_bytes, firmware_version)
+        self.process_parsed_results(parsed_results, "h3", firmware_version, database)
+
+
+    def process_parsed_results(self, parsed_results: list[dict], hub_version: str, firmware_version: str, database: Database):
         if hub_version.upper() not in self.server.detected_versions:
             logging.info(f"Detected Efergy Hub version: {hub_version.upper()} - {firmware_version}")
             self.server.detected_versions.add(hub_version.upper())
@@ -300,9 +312,10 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
                     label = data["label"]
                     value = data["value"]
                     firmware_version = data.get("firmware_version", firmware_version)
+                    timestamp = data.get("timestamp")
                     
                     logging.debug(f"Logging sensor: {label}, raw: {value}")
-                    database.log_data(label, value, firmware_version)
+                    database.log_data(label, value, firmware_version, timestamp=timestamp)
 
                     # Publish power reading
                     self.server.mqtt_manager.publish_power(label, sid, hub_version, firmware_version, value)
