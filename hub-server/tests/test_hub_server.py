@@ -89,6 +89,37 @@ def test_post_h2(test_server, mock_db, mock_mqtt):
     assert mock_mqtt.publish_power.called
 
 
+def test_post_h3bulk(test_server, mock_db, mock_mqtt):
+    host, port = test_server
+    payload = bytes.fromhex(
+        """
+        C7 B3 76 69 2C 16 0D 59 12 0D 7A 16 0D 27 12 0D
+        00 00 00 24 00 00 DD F3 36 44 6E 26 00 00 A6 81
+        02 45 94 20 00 3B B3 6D 01 45 C1 22 00 3B AC 2E
+        36 45 B2 24 00 3B AC EA 34 44 6D 26 00 3B B0 95
+        FD 44 E7 20 00 77 6B 1C 02 45 65 22 00 77 60 FF
+        """.replace("\n", " ").strip()
+    )
+    headers = {
+        "Content-Type": "application/eh-datalog",
+        "Content-Length": str(len(payload)),
+        "X-Version": "3.7.1",
+    }
+
+    status, data = http_request(host, port, "POST", "/h3bulk", body=payload, headers=headers)
+    assert status == 200
+    assert data == b"success"
+
+    assert mock_db.log_data.call_count == 7
+    first_call = mock_db.log_data.call_args_list[0]
+    assert first_call.args[0] == "efergy_h3_857644"
+    assert first_call.args[1] == pytest.approx(7286.0)
+    assert first_call.args[2] == "3.7.1"
+    assert first_call.kwargs["timestamp"] == 1769386951
+
+    assert mock_mqtt.publish_power.call_count == 7
+
+
 def test_post_recjson_h1(test_server, mock_db, mock_mqtt):
     host, port = test_server
     payload = b'json=AABBCCDDDDDD|694851F9|v1.0.1|{"data":[[610965,"mA","E1",33314,0,0,65535]]}|39ef0bdc14b52df375b79555f059b52f'

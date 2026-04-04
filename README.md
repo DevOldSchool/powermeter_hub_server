@@ -6,6 +6,8 @@ decommissioned Efergy cloud servers.
 
 This is designed for anyone who wants to keep their devices from becoming e-waste.
 
+Based on powermeter_hub_server by [aarond10](https://github.com/aarond10/powermeter_hub_server).
+
 ## How it Works
 
 The Efergy Hub is hard-coded to send its data to `sensornet.info` over HTTPS. 
@@ -59,7 +61,7 @@ The `hub-server` will automatically log the detected version at the `INFO` level
     - **H1 / H2**: `0.6`
     - **H3**: `1.0`
 
-*Note: If you don't see the detection message, you can temporarily set `LOG_LEVEL: DEBUG` in `docker-compose.yml` to see all incoming requests and identify the endpoint (`/recjson` = H1, `/h2` = H2, `/h3` = H3).*
+*Note: If you don't see the detection message, you can temporarily set `LOG_LEVEL: DEBUG` in `docker-compose.yml` to see all incoming requests and identify the endpoint (`/recjson` = H1, `/h2` = H2, `/h3` or `/h3bulk` = H3).*
 
 #### Environment Variables
 
