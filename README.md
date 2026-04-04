@@ -69,7 +69,6 @@ The `hub-server` will automatically log the detected version at the `INFO` level
 |----------------------------|-----------------------------------------------------------|-----------------------------|
 | `TZ`                       | Timezone (e.g., `Australia/Brisbane`)                     | `Australia/Brisbane`        |
 | `LOG_LEVEL`                | Logging verbosity (`DEBUG`, `INFO`, `WARN`, `ERROR`)      | `INFO`                      |
-| `TELEMETRY_ENABLED`        | Record unknown packets to help aid reverse engineering.   | `true`                      |
 | `MAINS_VOLTAGE`            | Local mains voltage (e.g., `230` for AU/UK, `120` for US) | `230`                       |
 | `POWER_FACTOR`             | Power factor (H1/H2 use `0.6`, H3 uses `1.0`)             | `0.6`                       |
 | `HISTORY_RETENTION_MONTHS` | How many months of data to keep (`0` = keep everything)   | `0`                         |
