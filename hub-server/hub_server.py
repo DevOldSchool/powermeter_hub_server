@@ -5,6 +5,7 @@ This server emulates the sensornet.info API endpoints for an
 Efergy hub, logging incoming sensor data to a sqlite database.
 """
 import logging
+import math
 import socket
 import sys
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -23,6 +24,14 @@ from config import (
     POWER_UNIT_OF_MEASUREMENT_H2, POWER_VALUE_TEMPLATE_H3, POWER_UNIT_OF_MEASUREMENT_H3, ENERGY_VALUE_TEMPLATE,
     ENERGY_UNIT_OF_MEASUREMENT
 )
+
+INT32_MAX = 2_147_483_647
+
+
+def is_valid_power_reading(value: float) -> bool:
+    """Reject non-finite readings and the INT32_MAX emitted by faulty hubs."""
+    return math.isfinite(value) and value < INT32_MAX
+
 
 class EfergyHTTPServer(HTTPServer):
     """
@@ -287,7 +296,11 @@ class FakeEfergyServer(SimpleHTTPRequestHandler):
                     value = data["value"]
                     firmware_version = data.get("firmware_version", firmware_version)
                     timestamp = data.get("timestamp")
-                    
+
+                    if not is_valid_power_reading(value):
+                        logging.warning(f"Skipping invalid power reading for {label}: {value}")
+                        continue
+
                     logging.debug(f"Logging sensor: {label}, raw: {value}")
                     database.log_data(label, value, firmware_version, timestamp=timestamp)
 
