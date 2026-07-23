@@ -89,6 +89,32 @@ def test_post_h2(test_server, mock_db, mock_mqtt):
     assert mock_mqtt.publish_power.called
 
 
+def test_post_h3_rejects_invalid_power_readings(test_server, mock_db, mock_mqtt):
+    host, port = test_server
+    payload = b"\r\n".join([
+        b"782792|1|EFCT|P1,12761.72|-61",
+        b"782792|1|EFCT|P1,2147483647.2147483647|-61",
+        b"782792|1|EFCT|P1,2147483647|-61",
+        b"782792|1|EFCT|P1,nan|-61",
+        b"782792|1|EFCT|P1,inf|-61",
+        b"782792|1|EFCT|P1,12285.65|-61",
+    ])
+    headers = {
+        "Content-Type": "application/eh-data",
+        "Content-Length": str(len(payload)),
+        "X-Version": "3.7.1",
+    }
+
+    status, data = http_request(host, port, "POST", "/h3", body=payload, headers=headers)
+
+    assert status == 200
+    assert data == b"success"
+    assert mock_db.log_data.call_count == 2
+    assert [call.args[1] for call in mock_db.log_data.call_args_list] == [12761.72, 12285.65]
+    assert mock_mqtt.publish_power.call_count == 2
+    assert [call.args[4] for call in mock_mqtt.publish_power.call_args_list] == [12761.72, 12285.65]
+
+
 def test_post_h3bulk(test_server, mock_db, mock_mqtt):
     host, port = test_server
     payload = bytes.fromhex(
